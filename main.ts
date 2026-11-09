@@ -352,8 +352,6 @@ class FinancesSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		containerEl.createEl('h2', { text: 'Finances Pipeline Settings' });
-
 		new Setting(containerEl)
 			.setName('Finances root folder')
 			.setDesc(

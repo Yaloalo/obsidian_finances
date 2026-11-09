@@ -1,5 +1,5 @@
 {
-	"name": "obsidian-finances",
+	"name": "finances-pipeline",
 	"version": "1.0.0",
 	"description": "Monthly Expense Pipeline inside Obsidian backed by Markdown files in finances/YYYY/MM.",
 	"main": "main.js",
