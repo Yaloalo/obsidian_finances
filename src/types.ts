@@ -67,6 +67,7 @@ export interface DashboardData {
 	month: string; // YYYY-MM
 	monthConfirmed: boolean;
 	carriedOverFrom: string | null;
+	copiedToNextMonth?: boolean;
 	backendMode: 'sqlite' | 'supabase' | 'markdown';
 	incomes: FixedIncome[];
 	fixedOutgoings: FixedOutgoing[];

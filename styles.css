@@ -154,3 +154,8 @@
 
 
 .efp-root.efp-root.efp-root.efp-root .max-w-md{max-width:var(--container-md)}.efp-root.efp-root.efp-root.efp-root .w-36{width:calc(var(--spacing) * 36)}
+.efp-root.efp-root.efp-root.efp-root .border-\[var\(--accent-green\)\]{border-color:var(--accent-green)}
+.efp-root.efp-root.efp-root.efp-root .hover\:border-\[var\(--accent-red\)\]:hover{border-color:var(--accent-red)}
+.efp-root.efp-root.efp-root.efp-root .efp-btn-copied-active{background-color:color-mix(in oklab,var(--accent-green) 18%,var(--bg-card));border-color:var(--accent-green);color:var(--accent-green)}
+.efp-root.efp-root.efp-root.efp-root .efp-btn-purge-confirm{background-color:var(--accent-red);color:#ffffff}
+

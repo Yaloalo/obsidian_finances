@@ -29,6 +29,13 @@ function formatMonthLabel(ym: string): string {
 	return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 }
 
+function shiftYearMonth(ym: string, deltaMonths: number): string {
+	const [year, month] = ym.split('-').map(Number);
+	if (!year || !month) return ym;
+	const d = new Date(year, month - 1 + deltaMonths, 1);
+	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
 export class MarkdownFinanceRepository {
 	private app: App;
 	private rootFolder: string;
@@ -167,6 +174,7 @@ export class MarkdownFinanceRepository {
 				};
 				fm = {
 					monthConfirmed: /monthConfirmed:\s*true/.test(yamlStr),
+					copiedToNextMonth: /copiedToNextMonth:\s*true/.test(yamlStr),
 					carriedOverFrom: '',
 					incomes: extractArray('incomes'),
 					fixedOutgoings: extractArray('fixedOutgoings'),
@@ -237,6 +245,7 @@ export class MarkdownFinanceRepository {
 				month,
 				monthConfirmed: Boolean(fm.monthConfirmed),
 				carriedOverFrom: fm.carriedOverFrom ? String(fm.carriedOverFrom) : null,
+				copiedToNextMonth: Boolean(fm.copiedToNextMonth),
 				backendMode: 'markdown',
 				incomes,
 				fixedOutgoings,
@@ -287,6 +296,7 @@ export class MarkdownFinanceRepository {
 			finances_pipeline: true,
 			month: data.month,
 			monthConfirmed: data.monthConfirmed,
+			copiedToNextMonth: Boolean(data.copiedToNextMonth),
 			carriedOverFrom: data.carriedOverFrom ?? '',
 			updated_at: new Date().toISOString(),
 			incomes: data.incomes,
@@ -443,36 +453,18 @@ export class MarkdownFinanceRepository {
 
 		if (content !== null) {
 			const parsed = this.parseMarkdownData(month, content);
-			if (parsed) return parsed;
-		}
-
-		// Auto carry-over from the most recent previous month if one exists
-		const allMonths = await this.listExistingMonths();
-		const prevMonths = allMonths.filter((m) => m < month);
-		const sourceMonth = prevMonths.length > 0 ? prevMonths[prevMonths.length - 1] : null;
-
-		if (sourceMonth) {
-			const prevContent = await this.readFileSafe(this.getOverviewFilePath(sourceMonth));
-			if (prevContent !== null) {
-				const prevData = this.parseMarkdownData(sourceMonth, prevContent);
-				if (prevData) {
-					const carriedData: DashboardData = {
-						month,
-						monthConfirmed: false,
-						carriedOverFrom: sourceMonth,
-						backendMode: 'markdown',
-						incomes: prevData.incomes.map((i) => ({ ...i, id: makeId(), month })),
-						fixedOutgoings: prevData.fixedOutgoings.map((f) => ({ ...f, id: makeId(), month })),
-						variableCategories: prevData.variableCategories.map((c) => ({
-							...c,
-							id: makeId(),
-							month
-						})),
-						dailyExpenses: []
-					};
-					await this.saveDashboardData(carriedData);
-					return carriedData;
+			if (parsed) {
+				if (!parsed.copiedToNextMonth) {
+					const nextMonth = shiftYearMonth(month, 1);
+					const nextContent = await this.readFileSafe(this.getOverviewFilePath(nextMonth));
+					if (nextContent !== null) {
+						const nextParsed = this.parseMarkdownData(nextMonth, nextContent);
+						if (nextParsed && nextParsed.carriedOverFrom === month) {
+							parsed.copiedToNextMonth = true;
+						}
+					}
 				}
+				return parsed;
 			}
 		}
 
@@ -480,6 +472,7 @@ export class MarkdownFinanceRepository {
 			month,
 			monthConfirmed: false,
 			carriedOverFrom: null,
+			copiedToNextMonth: false,
 			backendMode: 'markdown',
 			incomes: [],
 			fixedOutgoings: [],
@@ -856,6 +849,70 @@ export class MarkdownFinanceRepository {
 				data.dailyExpenses = data.dailyExpenses.filter((e) => e.category_id !== id);
 				await this.saveDashboardData(data);
 				return { success: true };
+			}
+
+			case 'copySetupToNextMonth': {
+				const nextMonth = shiftYearMonth(month, 1);
+				const nextOverviewPath = this.getOverviewFilePath(nextMonth);
+				const nextExistingContent = await this.readFileSafe(nextOverviewPath);
+				const nextParsed =
+					nextExistingContent !== null
+						? this.parseMarkdownData(nextMonth, nextExistingContent)
+						: null;
+
+				const nextData: DashboardData = {
+					month: nextMonth,
+					monthConfirmed: false,
+					carriedOverFrom: month,
+					copiedToNextMonth: nextParsed?.copiedToNextMonth ?? false,
+					backendMode: 'markdown',
+					incomes: data.incomes.map((i) => ({ ...i, id: makeId(), month: nextMonth })),
+					fixedOutgoings: data.fixedOutgoings.map((f) => ({
+						...f,
+						id: makeId(),
+						month: nextMonth
+					})),
+					variableCategories: data.variableCategories.map((c) => ({
+						...c,
+						id: makeId(),
+						month: nextMonth
+					})),
+					dailyExpenses: nextParsed ? nextParsed.dailyExpenses : []
+				};
+
+				await this.saveDashboardData(nextData);
+				data.copiedToNextMonth = true;
+				await this.saveDashboardData(data);
+				return {
+					success: true,
+					message: `Copied Income, Fixed & Semi-Fixed setup to ${formatMonthLabel(nextMonth)}.`
+				};
+			}
+
+			case 'purgeMonth': {
+				data.incomes = [];
+				data.fixedOutgoings = [];
+				data.variableCategories = [];
+				data.dailyExpenses = [];
+				data.monthConfirmed = false;
+				data.carriedOverFrom = null;
+				data.copiedToNextMonth = false;
+				await this.saveDashboardData(data);
+
+				const prevMonth = shiftYearMonth(month, -1);
+				const prevContent = await this.readFileSafe(this.getOverviewFilePath(prevMonth));
+				if (prevContent !== null) {
+					const prevData = this.parseMarkdownData(prevMonth, prevContent);
+					if (prevData && prevData.copiedToNextMonth) {
+						prevData.copiedToNextMonth = false;
+						await this.saveDashboardData(prevData);
+					}
+				}
+
+				return {
+					success: true,
+					message: `Purged all entries for ${formatMonthLabel(month)}.`
+				};
 			}
 
 			default:
