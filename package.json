@@ -1,0 +1,29 @@
+{
+	"name": "obsidian-finances",
+	"version": "1.0.0",
+	"description": "Monthly Expense Pipeline inside Obsidian backed by Markdown files in finances/YYYY/MM.",
+	"main": "main.js",
+	"type": "module",
+	"scripts": {
+		"dev": "node esbuild.config.mjs",
+		"build": "node esbuild.config.mjs production"
+	},
+	"keywords": [
+		"obsidian",
+		"obsidian-plugin",
+		"finances",
+		"expenses",
+		"budget"
+	],
+	"author": "Lennart Friebel",
+	"license": "MIT",
+	"devDependencies": {
+		"@types/node": "^20.11.0",
+		"builtin-modules": "^3.3.0",
+		"esbuild": "^0.21.5",
+		"obsidian": "latest",
+		"svelte": "^5.51.0",
+		"tslib": "^2.6.2",
+		"typescript": "^5.4.5"
+	}
+}
