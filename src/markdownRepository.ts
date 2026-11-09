@@ -165,7 +165,8 @@ export class MarkdownFinanceRepository {
 					const m = yamlStr.match(re);
 					if (m) {
 						try {
-							return JSON.parse(m[1]);
+							const parsedJson: unknown = JSON.parse(m[1]);
+							return Array.isArray(parsedJson) ? parsedJson : [];
 						} catch {
 							return [];
 						}
