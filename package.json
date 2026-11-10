@@ -1,6 +1,6 @@
 {
 	"name": "finances-pipeline",
-	"version": "1.0.2",
+	"version": "1.0.3",
 	"description": "Monthly Expense Pipeline inside Obsidian backed by Markdown files in finances/YYYY/MM.",
 	"main": "main.js",
 	"type": "module",

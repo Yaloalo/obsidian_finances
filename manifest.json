@@ -1,7 +1,7 @@
 {
 	"id": "finances-pipeline",
 	"name": "Finances Pipeline",
-	"version": "1.0.2",
+	"version": "1.0.3",
 	"minAppVersion": "1.7.2",
 	"description": "Visual 4-stage Monthly Expense Pipeline (Income → Fixed → Semi-Fixed → What Is Left) backed by Markdown files in finances/YYYY/MM.",
 	"author": "Lennart Friebel",
