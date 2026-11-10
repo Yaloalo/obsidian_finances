@@ -53,7 +53,6 @@ export class FinancesNavView extends ItemView {
 
 	async onOpen(): Promise<void> {
 		this.render();
-		await this.plugin.activateMainView();
 	}
 
 	private async openCurrentMonthNote(): Promise<void> {
@@ -99,6 +98,7 @@ export class FinancesPipelineView extends ItemView {
 	private plugin: FinancesPipelinePlugin;
 	private componentInstance: MountedDashboardInstance | null = null;
 	private currentMonth: string = getCurrentYearMonth();
+	private renderPromise: Promise<void> | null = null;
 
 	constructor(leaf: WorkspaceLeaf, plugin: FinancesPipelinePlugin) {
 		super(leaf);
@@ -122,6 +122,10 @@ export class FinancesPipelineView extends ItemView {
 	}
 
 	public async ensureRendered(): Promise<void> {
+		if (this.renderPromise) {
+			await this.renderPromise;
+			return;
+		}
 		if (!this.componentInstance || this.contentEl.children.length === 0) {
 			await this.renderView();
 		} else {
@@ -140,26 +144,40 @@ export class FinancesPipelineView extends ItemView {
 	}
 
 	public async renderView(): Promise<void> {
-		const container = this.contentEl;
-		if (this.componentInstance) {
-			try {
-				await unmount(this.componentInstance);
-			} catch {
-				// ignore unmount error
-			}
-			this.componentInstance = null;
+		if (this.renderPromise) {
+			return this.renderPromise;
 		}
-		container.empty();
-		container.addClass('efp-view-container');
+		this.renderPromise = this.doRenderView().finally(() => {
+			this.renderPromise = null;
+		});
+		return this.renderPromise;
+	}
+
+	private async doRenderView(): Promise<void> {
+		const container = this.contentEl;
 
 		try {
 			const initialData = await this.plugin.repo.getDashboardData(this.currentMonth);
+
+			if (this.componentInstance) {
+				try {
+					await unmount(this.componentInstance);
+				} catch {
+					// ignore unmount error
+				}
+				this.componentInstance = null;
+			}
+			container.empty();
+			container.addClass('efp-view-container');
 
 			this.componentInstance = mount(FinanceDashboard, {
 				target: container,
 				props: {
 					initialData,
 					repo: this.plugin.repo,
+					onMonthChange: (month: string) => {
+						this.currentMonth = month;
+					},
 					onOpenMarkdown: (month: string) => {
 						void this.openMonthNote(month);
 					}
@@ -168,6 +186,7 @@ export class FinancesPipelineView extends ItemView {
 		} catch (err: unknown) {
 			const errMsg = err instanceof Error ? `${err.message}\n${err.stack ?? ''}` : String(err);
 			console.error('[FinancesPipelineView] Failed to render:', err);
+			container.empty();
 			const errBox = container.createDiv({ cls: 'efp-error-box' });
 			errBox.setText(`Error loading Monthly Expense Pipeline:\n${errMsg}`);
 		}

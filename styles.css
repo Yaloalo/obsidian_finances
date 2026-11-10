@@ -202,6 +202,62 @@
 .efp-root.efp-root.efp-root.efp-root .max-w-md{max-width:var(--container-md)}.efp-root.efp-root.efp-root.efp-root .w-36{width:calc(var(--spacing) * 36)}
 .efp-root.efp-root.efp-root.efp-root .border-\[var\(--accent-green\)\]{border-color:var(--accent-green)}
 .efp-root.efp-root.efp-root.efp-root .hover\:border-\[var\(--accent-red\)\]:hover{border-color:var(--accent-red)}
-.efp-root.efp-root.efp-root.efp-root .efp-btn-copied-active{background-color:color-mix(in oklab,var(--accent-green) 18%,var(--bg-card));border-color:var(--accent-green);color:var(--accent-green)}
-.efp-root.efp-root.efp-root.efp-root .efp-btn-purge-confirm{background-color:var(--accent-red);color:#ffffff}
+
+.efp-modal-backdrop {
+	position: fixed;
+	inset: 0;
+	z-index: 9999;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background-color: rgba(0, 0, 0, 0.65);
+	padding: 16px;
+}
+
+.efp-modal-box {
+	width: 100%;
+	max-width: 440px;
+	border-radius: 16px;
+	border: 2px solid var(--accent-red);
+	background-color: var(--bg-card);
+	padding: 24px;
+	box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+}
+
+.efp-btn-danger {
+	appearance: none;
+	-webkit-appearance: none;
+	border-radius: 12px;
+	background-color: var(--accent-red);
+	color: #ffffff;
+	font-weight: 700;
+	font-size: 13px;
+	padding: 9px 16px;
+	border: none;
+	cursor: pointer;
+	transition: opacity 0.15s ease;
+}
+
+.efp-btn-danger:hover {
+	opacity: 0.9;
+}
+
+.efp-btn-secondary {
+	appearance: none;
+	-webkit-appearance: none;
+	border-radius: 12px;
+	border: 1px solid var(--border-main);
+	background-color: var(--bg-subtle);
+	color: var(--text-main);
+	font-weight: 600;
+	font-size: 13px;
+	padding: 9px 16px;
+	cursor: pointer;
+	transition: background-color 0.15s ease;
+}
+
+.efp-btn-secondary:hover {
+	background-color: var(--bg-card);
+}
+
 

@@ -148,6 +148,27 @@ export class MarkdownFinanceRepository {
 		return Array.from(months).sort();
 	}
 
+	public async getPreviousPopulatedMonth(currentMonth: string): Promise<string | null> {
+		const allMonths = await this.listExistingMonths();
+		const prevMonths = allMonths.filter((m) => m < currentMonth).sort();
+		for (let i = prevMonths.length - 1; i >= 0; i--) {
+			const m = prevMonths[i];
+			const content = await this.readFileSafe(this.getOverviewFilePath(m));
+			if (content) {
+				const parsed = this.parseMarkdownData(m, content);
+				if (
+					parsed &&
+					(parsed.incomes.length > 0 ||
+						parsed.fixedOutgoings.length > 0 ||
+						parsed.variableCategories.length > 0)
+				) {
+					return m;
+				}
+			}
+		}
+		return null;
+	}
+
 	private parseMarkdownData(month: string, content: string): DashboardData | null {
 		const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
 		if (!match) return null;
@@ -246,7 +267,6 @@ export class MarkdownFinanceRepository {
 				month,
 				monthConfirmed: Boolean(fm.monthConfirmed),
 				carriedOverFrom: fm.carriedOverFrom ? String(fm.carriedOverFrom) : null,
-				copiedToNextMonth: Boolean(fm.copiedToNextMonth),
 				backendMode: 'markdown',
 				incomes,
 				fixedOutgoings,
@@ -297,7 +317,6 @@ export class MarkdownFinanceRepository {
 			finances_pipeline: true,
 			month: data.month,
 			monthConfirmed: data.monthConfirmed,
-			copiedToNextMonth: Boolean(data.copiedToNextMonth),
 			carriedOverFrom: data.carriedOverFrom ?? '',
 			updated_at: new Date().toISOString(),
 			incomes: data.incomes,
@@ -455,16 +474,6 @@ export class MarkdownFinanceRepository {
 		if (content !== null) {
 			const parsed = this.parseMarkdownData(month, content);
 			if (parsed) {
-				if (!parsed.copiedToNextMonth) {
-					const nextMonth = shiftYearMonth(month, 1);
-					const nextContent = await this.readFileSafe(this.getOverviewFilePath(nextMonth));
-					if (nextContent !== null) {
-						const nextParsed = this.parseMarkdownData(nextMonth, nextContent);
-						if (nextParsed && nextParsed.carriedOverFrom === month) {
-							parsed.copiedToNextMonth = true;
-						}
-					}
-				}
 				return parsed;
 			}
 		}
@@ -473,7 +482,6 @@ export class MarkdownFinanceRepository {
 			month,
 			monthConfirmed: false,
 			carriedOverFrom: null,
-			copiedToNextMonth: false,
 			backendMode: 'markdown',
 			incomes: [],
 			fixedOutgoings: [],
@@ -852,41 +860,37 @@ export class MarkdownFinanceRepository {
 				return { success: true };
 			}
 
-			case 'copySetupToNextMonth': {
-				const nextMonth = shiftYearMonth(month, 1);
-				const nextOverviewPath = this.getOverviewFilePath(nextMonth);
-				const nextExistingContent = await this.readFileSafe(nextOverviewPath);
-				const nextParsed =
-					nextExistingContent !== null
-						? this.parseMarkdownData(nextMonth, nextExistingContent)
-						: null;
-
-				const nextData: DashboardData = {
-					month: nextMonth,
-					monthConfirmed: false,
-					carriedOverFrom: month,
-					copiedToNextMonth: nextParsed?.copiedToNextMonth ?? false,
-					backendMode: 'markdown',
-					incomes: data.incomes.map((i) => ({ ...i, id: makeId(), month: nextMonth })),
-					fixedOutgoings: data.fixedOutgoings.map((f) => ({
-						...f,
-						id: makeId(),
-						month: nextMonth
-					})),
-					variableCategories: data.variableCategories.map((c) => ({
-						...c,
-						id: makeId(),
-						month: nextMonth
-					})),
-					dailyExpenses: nextParsed ? nextParsed.dailyExpenses : []
-				};
-
-				await this.saveDashboardData(nextData);
-				data.copiedToNextMonth = true;
+			case 'importPreviousMonthSetup': {
+				const requestedSource = String(formData.get('source_month') ?? '').trim();
+				const sourceMonth = requestedSource || (await this.getPreviousPopulatedMonth(month));
+				if (!sourceMonth) {
+					return { error: 'No previous month setup found to import.' };
+				}
+				const sourceContent = await this.readFileSafe(this.getOverviewFilePath(sourceMonth));
+				if (!sourceContent) {
+					return { error: `Could not read data from ${formatMonthLabel(sourceMonth)}.` };
+				}
+				const sourceData = this.parseMarkdownData(sourceMonth, sourceContent);
+				if (!sourceData) {
+					return { error: `Could not parse data from ${formatMonthLabel(sourceMonth)}.` };
+				}
+				data.incomes = sourceData.incomes.map((i) => ({ ...i, id: makeId(), month }));
+				data.fixedOutgoings = sourceData.fixedOutgoings.map((f) => ({
+					...f,
+					id: makeId(),
+					month
+				}));
+				data.variableCategories = sourceData.variableCategories.map((c) => ({
+					...c,
+					id: makeId(),
+					month
+				}));
+				data.carriedOverFrom = sourceMonth;
+				data.monthConfirmed = false;
 				await this.saveDashboardData(data);
 				return {
 					success: true,
-					message: `Copied Income, Fixed & Semi-Fixed setup to ${formatMonthLabel(nextMonth)}.`
+					message: `Imported setup from ${formatMonthLabel(sourceMonth)}.`
 				};
 			}
 
@@ -897,18 +901,7 @@ export class MarkdownFinanceRepository {
 				data.dailyExpenses = [];
 				data.monthConfirmed = false;
 				data.carriedOverFrom = null;
-				data.copiedToNextMonth = false;
 				await this.saveDashboardData(data);
-
-				const prevMonth = shiftYearMonth(month, -1);
-				const prevContent = await this.readFileSafe(this.getOverviewFilePath(prevMonth));
-				if (prevContent !== null) {
-					const prevData = this.parseMarkdownData(prevMonth, prevContent);
-					if (prevData && prevData.copiedToNextMonth) {
-						prevData.copiedToNextMonth = false;
-						await this.saveDashboardData(prevData);
-					}
-				}
 
 				return {
 					success: true,

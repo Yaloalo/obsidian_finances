@@ -8,10 +8,12 @@
 	let {
 		initialData,
 		repo,
+		onMonthChange,
 		onOpenMarkdown
 	}: {
 		initialData: DashboardData;
 		repo: MarkdownFinanceRepository;
+		onMonthChange?: (month: string) => void;
 		onOpenMarkdown?: (month: string) => void;
 	} = $props();
 
@@ -19,6 +21,20 @@
 	let form = $state<{ error?: string; success?: boolean; message?: string } | null>(null);
 	let dashboardRootEl = $state<HTMLElement | null>(null);
 	let viewMode = $state<'pipeline' | 'mobile-quick' | 'mobile-wheels'>('pipeline');
+	let previousPopulatedMonth = $state<string | null>(null);
+	let isImporting = $state(false);
+	let showPurgeModal = $state(false);
+
+	const isMonthEmpty = $derived(
+		data.incomes.length === 0 &&
+		data.fixedOutgoings.length === 0 &&
+		data.variableCategories.length === 0 &&
+		data.dailyExpenses.length === 0
+	);
+
+	async function checkPreviousMonth(month: string) {
+		previousPopulatedMonth = await repo.getPreviousPopulatedMonth(month);
+	}
 
 	onMount(() => {
 		const isMobileViewport =
@@ -28,6 +44,7 @@
 		if (isMobileViewport) {
 			viewMode = 'mobile-quick';
 		}
+		void checkPreviousMonth(data.month);
 	});
 
 	function scrollToTop() {
@@ -41,6 +58,7 @@
 	export async function reloadMonth(targetMonth?: string) {
 		const m = targetMonth || data.month;
 		data = await repo.getDashboardData(m);
+		await checkPreviousMonth(m);
 	}
 
 	type EnhanceHandler = (input: {
@@ -532,34 +550,16 @@
 		return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 	}
 
-	function getNextMonthYm(ym: string): string {
-		const [year, month] = ym.split('-').map(Number);
-		if (!year || !month) return ym;
-		const d = new Date(year, month, 1);
-		return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-	}
-
-	function formatShortMonthLabel(ym: string): string {
-		const [year, month] = ym.split('-').map(Number);
-		if (!year || !month) return ym;
-		const d = new Date(year, month - 1, 1);
-		return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-	}
-
-	let confirmingPurge = $state(false);
-	let justCopiedFlash = $state(false);
-	const nextMonthShortLabel = $derived(formatShortMonthLabel(getNextMonthYm(data.month)));
-
-	async function copySetupToNextMonth() {
+	async function importPreviousMonthSetup() {
+		if (!previousPopulatedMonth) return;
+		isImporting = true;
 		const fd = new FormData();
 		fd.set('month', data.month);
-		const res = await repo.handleAction('copySetupToNextMonth', fd, data.month);
+		fd.set('source_month', previousPopulatedMonth);
+		const res = await repo.handleAction('importPreviousMonthSetup', fd, data.month);
 		form = res;
 		data = await repo.getDashboardData(data.month);
-		justCopiedFlash = true;
-		setTimeout(() => {
-			justCopiedFlash = false;
-		}, 2500);
+		isImporting = false;
 	}
 
 	async function purgeCurrentMonth() {
@@ -567,16 +567,19 @@
 		fd.set('month', data.month);
 		const res = await repo.handleAction('purgeMonth', fd, data.month);
 		form = res;
-		confirmingPurge = false;
+		showPurgeModal = false;
 		data = await repo.getDashboardData(data.month);
+		await checkPreviousMonth(data.month);
 	}
 
-	function changeMonth(delta: number) {
-		confirmingPurge = false;
+	async function changeMonth(delta: number) {
 		const [year, month] = data.month.split('-').map(Number);
 		const d = new Date(year, month - 1 + delta, 1);
 		const nextYm = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-		repo.getDashboardData(nextYm).then((d) => { data = d; form = null; });
+		data = await repo.getDashboardData(nextYm);
+		form = null;
+		onMonthChange?.(nextYm);
+		await checkPreviousMonth(nextYm);
 	}
 </script>
 
@@ -617,53 +620,15 @@
 				<span>{showModifySetupModal ? '✕ Close Setup List' : '✎ Modify Monthly Setup'}</span>
 			</button>
 
-			<!-- SMALL TOP BUTTON TO COPY INCOME, FIXED & SEMI-FIXED SETUP TO NEXT MONTH (VISIBLY LIT WHEN CLICKED) -->
+			<!-- BUTTON TO PURGE ALL ENTRIES FOR THIS MONTH (OPENS CONFIRMATION MODAL) -->
 			<button
 				type="button"
-				onclick={copySetupToNextMonth}
-				class="inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition focus-visible:ring-2 focus-visible:ring-[var(--border-strong)] focus-visible:outline-none {data.copiedToNextMonth || justCopiedFlash
-					? 'efp-btn-copied-active border-[var(--accent-green)] text-[var(--accent-green)]'
-					: 'border-[var(--border-main)] bg-[var(--bg-card)] text-[var(--text-main)] hover:bg-[var(--bg-subtle)]'}"
-				title="Copy this month's Income, Fixed Spending, and Semi-Fixed Categories over to {nextMonthShortLabel}"
+				onclick={() => (showPurgeModal = true)}
+				class="inline-flex items-center gap-1 rounded-xl border border-[var(--border-main)] bg-[var(--bg-card)] px-3 py-2 text-xs font-semibold text-[var(--text-muted)] transition hover:border-[var(--accent-red)] hover:text-[var(--accent-red)] focus-visible:ring-2 focus-visible:ring-[var(--border-strong)] focus-visible:outline-none"
+				title="Purge all entries for {formatMonthLabel(data.month)}"
 			>
-				{#if justCopiedFlash}
-					<span>✓ Copied Setup → {nextMonthShortLabel}!</span>
-				{:else if data.copiedToNextMonth}
-					<span>✓ Copied to {nextMonthShortLabel}</span>
-				{:else}
-					<span>⇉ Copy Setup → {nextMonthShortLabel}</span>
-				{/if}
+				<span>🗑 Purge Month</span>
 			</button>
-
-			<!-- SMALL TOP BUTTON TO PURGE ALL ENTRIES (INCOME, FIXED, SEMI-FIXED & EXPENSES) FOR THIS MONTH -->
-			{#if !confirmingPurge}
-				<button
-					type="button"
-					onclick={() => (confirmingPurge = true)}
-					class="inline-flex items-center gap-1 rounded-xl border border-[var(--border-main)] bg-[var(--bg-card)] px-3 py-2 text-xs font-semibold text-[var(--text-muted)] transition hover:border-[var(--accent-red)] hover:text-[var(--accent-red)] focus-visible:ring-2 focus-visible:ring-[var(--border-strong)] focus-visible:outline-none"
-					title="Purge all Income, Fixed, Semi-Fixed, and Expense entries for {formatMonthLabel(data.month)}"
-				>
-					<span>🗑 Purge Month</span>
-				</button>
-			{:else}
-				<div class="inline-flex items-center gap-1 rounded-xl border border-[var(--accent-red)] bg-[var(--bg-card)] p-0.5">
-					<button
-						type="button"
-						onclick={purgeCurrentMonth}
-						class="efp-btn-purge-confirm rounded-lg px-2.5 py-1.5 text-xs font-bold transition"
-						title="Confirm purging all entries for {formatMonthLabel(data.month)}"
-					>
-						⚠ Confirm Purge All
-					</button>
-					<button
-						type="button"
-						onclick={() => (confirmingPurge = false)}
-						class="rounded-lg px-2 py-1.5 text-xs font-semibold text-[var(--text-muted)] transition hover:text-[var(--text-main)]"
-					>
-						Cancel
-					</button>
-				</div>
-			{/if}
 		</div>
 
 		<div class="flex flex-wrap items-center gap-2.5">
@@ -743,6 +708,92 @@
 			class="mb-6 flex items-center justify-between rounded-xl border border-[var(--accent-red)] bg-[var(--bg-card)] px-4 py-3 text-xs font-semibold text-[var(--accent-red)]"
 		>
 			<span>{form.error}</span>
+		</div>
+	{/if}
+
+	<!-- ========================================================================= -->
+	<!-- EMPTY MONTH BANNER (ONLY SHOWS WHEN MONTH HAS ZERO ENTRIES)               -->
+	<!-- ========================================================================= -->
+	{#if isMonthEmpty}
+		<div class="mb-8 rounded-2xl border-2 border-dashed border-[var(--border-strong)] bg-[var(--bg-card)] p-8 text-center shadow-xs">
+			<div class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--btn-primary-bg)]/15 text-2xl text-[var(--accent-green)]">
+				📥
+			</div>
+			<h2 class="text-base font-bold text-[var(--text-main)]">
+				{formatMonthLabel(data.month)} is Empty
+			</h2>
+			<p class="mx-auto mt-1 max-w-md text-xs text-[var(--text-muted)]">
+				{#if previousPopulatedMonth}
+					Would you like to import your Income, Fixed Spending, and Semi-Fixed setup from <strong>{formatMonthLabel(previousPopulatedMonth)}</strong>?
+				{:else}
+					No previous month setup found. Click "+ Put In Expense" or "✎ Modify Monthly Setup" to start tracking this month.
+				{/if}
+			</p>
+
+			<div class="mt-5 flex flex-wrap items-center justify-center gap-3">
+				{#if previousPopulatedMonth}
+					<button
+						type="button"
+						onclick={importPreviousMonthSetup}
+						disabled={isImporting}
+						class="inline-flex items-center gap-2 rounded-xl bg-[var(--btn-primary-bg)] px-5 py-2.5 text-xs font-bold text-[var(--btn-primary-fg)] shadow-sm transition hover:opacity-90 disabled:opacity-50"
+					>
+						<span>{isImporting ? '⏳ Importing Setup...' : `📥 Import Setup from ${formatMonthLabel(previousPopulatedMonth)}`}</span>
+					</button>
+				{/if}
+				<button
+					type="button"
+					onclick={() => (showModifySetupModal = true)}
+					class="inline-flex items-center gap-1.5 rounded-xl border border-[var(--border-main)] bg-[var(--bg-subtle)] px-4 py-2.5 text-xs font-semibold text-[var(--text-main)] transition hover:bg-[var(--bg-card)]"
+				>
+					<span>✎ Setup Manually</span>
+				</button>
+			</div>
+		</div>
+	{/if}
+
+	<!-- ========================================================================= -->
+	<!-- PURGE CONFIRMATION MODAL                                                  -->
+	<!-- ========================================================================= -->
+	{#if showPurgeModal}
+		<div
+			class="efp-modal-backdrop"
+			role="dialog"
+			aria-modal="true"
+			tabindex="-1"
+			onclick={(e) => {
+				if (e.target === e.currentTarget) showPurgeModal = false;
+			}}
+			onkeydown={(e) => {
+				if (e.key === 'Escape') showPurgeModal = false;
+			}}
+		>
+			<div class="efp-modal-box">
+				<div class="mb-3 flex items-center gap-2.5 text-base font-bold text-[var(--accent-red)]">
+					<span class="text-xl">⚠️</span>
+					<span>Purge All Entries for {formatMonthLabel(data.month)}?</span>
+				</div>
+				<p class="mb-5 text-xs leading-relaxed text-[var(--text-muted)]">
+					This will permanently delete <strong>all Income</strong>, <strong>Fixed Spending</strong>, <strong>Semi-Fixed Categories</strong>, and <strong>logged Expenses</strong> for {formatMonthLabel(data.month)}.
+					This action cannot be undone.
+				</p>
+				<div class="flex items-center justify-end gap-3">
+					<button
+						type="button"
+						onclick={() => (showPurgeModal = false)}
+						class="efp-btn-secondary"
+					>
+						Cancel
+					</button>
+					<button
+						type="button"
+						onclick={purgeCurrentMonth}
+						class="efp-btn-danger"
+					>
+						🗑 Yes, Purge Entire Month
+					</button>
+				</div>
+			</div>
 		</div>
 	{/if}
 
