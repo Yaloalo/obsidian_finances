@@ -288,7 +288,7 @@ export default class FinancesPipelinePlugin extends Plugin {
 		if (leaves.length > 0) {
 			leaf = leaves[0];
 		} else {
-			leaf = workspace.getLeaf('tab');
+			leaf = workspace.getLeaf(false);
 			if (leaf) {
 				await leaf.setViewState({
 					type: FINANCES_VIEW_TYPE,
